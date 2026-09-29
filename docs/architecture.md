@@ -54,17 +54,30 @@ flowchart TD
 
 ## 2. Ingestion & Tree Parsing Engine
 
-### `MarkdownTreeParser`
-- Parses CommonMark ATX headings (`#` through `######`).
-- Maintains code fence tracking (` ``` `) to ensure code comments (e.g., `# comment`) are never misidentified as Markdown headings.
-- Constructs a tree of `TOCNode` elements, each containing:
-  - `id`: Deterministic unique identifier derived from document ID and heading hierarchy.
-  - `title`: Extracted heading text.
-  - `level`: Heading level (1 to 6).
-  - `path`: Breadcrumb hierarchy (e.g., `["Cloud Server", "Storage", "Block Storage"]`).
-  - `line_start` & `line_end`: Source file line span.
-  - `content`: Raw content of the section.
-  - `content_hash`: SHA-256 hash of the section content.
+### `UniversalDocumentLoader`
+The universal loader accommodates diverse document types while standardizing them into a unified `MarkdownDocument` and `TOCNode` tree representation:
+
+1. **Markdown (`.md`) via `MarkdownTreeParser`**:
+   - Parses CommonMark ATX headings (`#` through `######`).
+   - Maintains code fence tracking (` ``` `) to ensure code comments (e.g., `# comment`) are never misidentified as Markdown headings.
+   - Extracts precise line spans (`line_start`, `line_end`) and hierarchy paths.
+2. **PDF (`.pdf`) via LangChain `PyPDFLoader`**:
+   - Extracts pages using LangChain's official `PyPDFLoader`.
+   - Uses `RecursiveCharacterTextSplitter` to segment pages into coherent chunks.
+   - Wraps chunks into `TOCNode` leaves with breadcrumbs (e.g., `["Document Title", "Page 2"]`).
+3. **Text (`.txt`) via LangChain `TextLoader`**:
+   - Loads files via LangChain's official `TextLoader`.
+   - Chunks through `RecursiveCharacterTextSplitter` with natural paragraph and newline boundaries.
+   - Assigns hierarchical breadcrumbs and deterministic section IDs.
+
+All nodes contain:
+- `id`: Deterministic unique identifier derived from document ID and section/chunk position.
+- `title`: Section or page chunk label.
+- `level`: Heading/chunk level.
+- `path`: Breadcrumb hierarchy (e.g., `["Cloud Server", "Storage", "Block Storage"]`).
+- `line_start` & `line_end`: Source file line or page span.
+- `content`: Raw content of the section.
+- `content_hash`: Deterministic SHA-256 hash of the section content.
 
 ### Breadcrumb Context Invariant
 To ensure that dense vectors contain full semantic context regardless of chunk size, every embedded node prepends its breadcrumb trail:
@@ -76,7 +89,7 @@ Section: [Document Title > Parent Section > Child Subsection]
 
 ---
 
-## 3. Incremental Tree Diff Engine
+## 3. Incremental Tree Diff Engine & Deletion Lifecycle
 
 ### `TreeDiffEngine`
 When a document is re-ingested, the diff engine compares the new TOC tree against the previously recorded registry:
@@ -88,6 +101,15 @@ When a document is re-ingested, the diff engine compares the new TOC tree agains
 | **Added** | Node ID does not exist in old version | Embed node and insert into ChromaDB and BM25 | Embeddings for new node |
 | **Deleted** | Old node ID no longer exists in new tree | Delete from ChromaDB and BM25 index | 0 Tokens |
 | **Renamed / Moved** | Content hash matches an old node under a new heading/path | Update metadata in ChromaDB & BM25 directly | **0 Tokens** |
+
+### Complete Document Deletion Lifecycle
+To guarantee that outdated documentation never impacts future queries:
+- Calling `store.delete_document(doc_id)` or invoking `DELETE /api/documents/{doc_id}` / `cli delete <doc_id>`:
+  1. Identifies all leaf node IDs belonging to the document.
+  2. Permanently removes them from ChromaDB vector collection.
+  3. Evicts all associated document entries from the BM25 lexical inverted index.
+  4. Removes the document record from `registry.json`.
+  5. Subsequent hybrid searches immediately exclude all removed content.
 
 ---
 
@@ -115,7 +137,28 @@ $$\text{Score}(d) = \alpha \cdot \text{DenseNorm}(d) + (1 - \alpha) \cdot \text{
 
 ---
 
-## 5. Agent Tools & LangGraph Architecture
+## 5. Embedding Model Selection & Comparative Analysis
+
+Selecting the optimal embedding model was guided by three strict operational requirements:
+1. **Low Latency & High Availability within Iran**: Avoiding cross-border rate-limits and network latency.
+2. **Dense Cross-Lingual Semantic Space**: Handling hybrid Persian and English technical cloud nomenclature.
+3. **High Dimensionality for Granular Technical Separation**: Distinguishing between nuanced tier definitions, IOPS configurations, and routing options.
+
+### Comparative Evaluation
+
+| Evaluation Criteria | `Gemini-embedding-001` (Arvan Cloud AI) | `BAAI/bge-m3` | `text-embedding-3-large` (OpenAI) | `text-embedding-3-small` (OpenAI) |
+| :--- | :--- | :--- | :--- | :--- |
+| **Vector Dimensions** | **3072** | 1024 | 3072 / 1536 | 1536 |
+| **Hosting Location** | **Arvan Cloud AI (Local)** | Local GPU / HuggingFace | US Cloud (Azure/OpenAI) | US Cloud (Azure/OpenAI) |
+| **Persian Language Support**| **Native Cross-Lingual SOTA** | High (Multilingual MTEB) | High | Moderate |
+| **Cloud Technical Vocabulary**| **Exceptional** | Good (Generic) | High | Moderate |
+| **API Latency** | **< 100ms** | Hardware dependent | 300ms - 1200ms | 250ms - 800ms |
+| **Offline Fallback Resilience**| Built-in `SimpleHash` adapter | Requires PyTorch local | None without API | None without API |
+| **Selection Verdict** | **Primary Standard (Selected)** | Viable for air-gapped self-host | Secondary Cloud | Deprecated for this use case |
+
+---
+
+## 6. Agent Tools & LangGraph Architecture
 
 The system uses a cyclic **LangGraph `StateGraph`** (`START` $\to$ `agent` $\to$ `tools` $\to$ `agent` $\to$ `END`):
 

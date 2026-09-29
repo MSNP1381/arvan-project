@@ -12,6 +12,7 @@ from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from tqdm import tqdm
 
 from arvan_project.parser.tree_parser import MarkdownTreeParser
+from arvan_project.parser.loaders import UniversalDocumentLoader
 from arvan_project.parser.models import TOCNode
 from arvan_project.storage.hybrid_store import HybridSearchStore
 from arvan_project.agent.tools import set_store
@@ -45,21 +46,22 @@ def handle_ingest(file_path: str, doc_id: str | None = None) -> None:
 
     store = HybridSearchStore()
     set_store(store)
-    parser = MarkdownTreeParser()
+    loader = UniversalDocumentLoader()
 
     if path.is_dir():
-        # Directory ingestion mode
-        md_files = sorted(
-            [f for f in path.rglob("*.md") if f.name != "SUMMARY.md"]
+        # Directory ingestion mode: scan for markdown, pdf, and text files
+        valid_extensions = {".md", ".markdown", ".pdf", ".txt"}
+        doc_files = sorted(
+            [f for f in path.rglob("*") if f.is_file() and f.suffix.lower() in valid_extensions and f.name != "SUMMARY.md"]
         )
-        if not md_files:
-            console.print(f"[yellow]No .md files found in directory: {file_path}[/yellow]")
+        if not doc_files:
+            console.print(f"[yellow]No supported files (.md, .pdf, .txt) found in directory: {file_path}[/yellow]")
             return
 
         console.print(
             Panel(
-                f"[bold green]Starting Batch Ingestion of {len(md_files)} documents from:[/bold green] [cyan]{file_path}[/cyan]",
-                title="Arvan Cloud Documentation Ingestion",
+                f"[bold green]Starting Batch Ingestion of {len(doc_files)} documents from:[/bold green] [cyan]{file_path}[/cyan]",
+                title="Arvan Cloud Multi-Format Document Ingestion",
             )
         )
 
@@ -73,17 +75,17 @@ def handle_ingest(file_path: str, doc_id: str | None = None) -> None:
         total_embedded = 0
         total_unchanged = 0
 
-        with tqdm(md_files, desc="Ingesting Documents", unit="doc", dynamic_ncols=True) as pbar:
+        with tqdm(doc_files, desc="Ingesting Documents", unit="doc", dynamic_ncols=True) as pbar:
             for f in pbar:
                 # Generate clean doc_id relative to root/docs or parent
                 try:
                     rel = f.relative_to(path.parent if path.parent.name else path)
-                    clean_id = str(rel).replace("\\", "/").removesuffix(".md")
+                    clean_id = str(rel).replace("\\", "/").removesuffix(f.suffix)
                 except Exception:
                     clean_id = f.stem
 
                 pbar.set_postfix_str(f"Doc: {clean_id[:25]}")
-                doc = parser.parse_file(f, doc_id=clean_id)
+                doc = loader.load_file(f, doc_id=clean_id)
                 diff = store.ingest_document(doc)
 
                 embedded_count = len(diff.nodes_needing_embedding)
@@ -103,7 +105,7 @@ def handle_ingest(file_path: str, doc_id: str | None = None) -> None:
 
         console.print(overall_table)
         console.print(
-            f"[bold green]Batch Ingestion Complete![/bold green] Total documents: [bold]{len(md_files)}[/bold] | "
+            f"[bold green]Batch Ingestion Complete![/bold green] Total documents: [bold]{len(doc_files)}[/bold] | "
             f"Preserved unchanged: [bold green]{total_unchanged}[/bold green] | "
             f"Newly embedded: [bold blue]{total_embedded}[/bold blue]\n"
         )
@@ -111,10 +113,10 @@ def handle_ingest(file_path: str, doc_id: str | None = None) -> None:
 
     # Single-file ingestion mode
     with tqdm(total=1, desc=f"Parsing {doc_id or path.stem}", unit="doc", dynamic_ncols=True) as pbar:
-        doc = parser.parse_file(path, doc_id=doc_id)
+        doc = loader.load_file(path, doc_id=doc_id)
         pbar.update(1)
 
-    console.print(Panel(f"[bold green]Parsed Markdown Document: '{doc.doc_id}'[/bold green]"))
+    console.print(Panel(f"[bold green]Parsed Document: '{doc.doc_id}' ({path.suffix})[/bold green]"))
 
     # Display TOC Tree
     tree = Tree(f"[bold yellow]{doc.title}[/bold yellow] ({doc.doc_id})")
@@ -278,6 +280,48 @@ def handle_chat() -> None:
             console.print(f"[bold red]Error:[/bold red] {e}")
 
 
+
+def handle_delete(doc_id: str) -> None:
+    store = HybridSearchStore()
+    success = store.delete_document(doc_id)
+    if success:
+        console.print(
+            Panel(
+                f"[bold green]Document '{doc_id}' successfully deleted![/bold green]\n"
+                f"• Removed embeddings from ChromaDB\n"
+                f"• Purged terms from BM25 inverted index\n"
+                f"• Cleaned from document registry",
+                title="Document Deletion",
+                border_style="green",
+            )
+        )
+    else:
+        console.print(f"[bold red]Error:[/bold red] Document '{doc_id}' not found in registry.")
+        available = store.list_documents()
+        console.print(f"Available documents: {available}")
+
+
+def handle_list() -> None:
+    store = HybridSearchStore()
+    docs = store.list_documents()
+    if not docs:
+        console.print("[yellow]No documents currently indexed.[/yellow]")
+        return
+
+    table = Table(title="Indexed Documents in Knowledge Base")
+    table.add_column("Doc ID", style="cyan")
+    table.add_column("Title", style="bold")
+    table.add_column("Total Nodes", justify="right", style="green")
+
+    for doc_id in docs:
+        doc = store.get_document(doc_id)
+        title = doc.title if doc else "-"
+        nodes_count = len(doc.all_nodes()) if doc else 0
+        table.add_row(doc_id, title, str(nodes_count))
+
+    console.print(table)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Agentic RAG with Markdown TOC Tree, Diffing, and Hybrid Search"
@@ -285,8 +329,8 @@ def main() -> None:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # Ingest command
-    ingest_p = subparsers.add_parser("ingest", help="Ingest a Markdown file into TOC tree and DB")
-    ingest_p.add_argument("file", help="Path to markdown file")
+    ingest_p = subparsers.add_parser("ingest", help="Ingest a file (.md, .pdf, .txt) into TOC tree and DB")
+    ingest_p.add_argument("file", help="Path to file or directory")
     ingest_p.add_argument("--doc-id", default=None, help="Custom document ID")
 
     # TOC command
@@ -299,6 +343,13 @@ def main() -> None:
     search_p.add_argument("--alpha", type=float, default=0.5, help="Hybrid alpha (0=BM25, 1=Dense)")
     search_p.add_argument("--top-k", type=int, default=4, help="Max results to return")
 
+    # Delete command
+    del_p = subparsers.add_parser("delete", help="Delete a document and purge all its vectors and BM25 index")
+    del_p.add_argument("doc_id", help="Document ID to delete")
+
+    # List command
+    subparsers.add_parser("list", help="List all currently indexed documents")
+
     # Chat command
     subparsers.add_parser("chat", help="Start interactive LangGraph agent chat")
 
@@ -310,6 +361,10 @@ def main() -> None:
         handle_toc(args.doc_id)
     elif args.command == "search":
         handle_search(args.query, args.alpha, args.top_k)
+    elif args.command == "delete":
+        handle_delete(args.doc_id)
+    elif args.command == "list":
+        handle_list()
     elif args.command == "chat":
         handle_chat()
 

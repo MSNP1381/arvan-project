@@ -22,6 +22,12 @@ dependencies = [
     "rank-bm25>=0.2.2",
     "rich>=15.0.0",
     "tqdm>=4.66.0",
+    "pypdf>=6.19.0",
+    "fastapi>=0.141.1",
+    "uvicorn>=0.54.0",
+    "python-multipart>=0.0.32",
+    "langchain-community>=0.4.2",
+    "langchain-text-splitters>=1.1.2",
 ]
 
 [project.scripts]

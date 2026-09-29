@@ -1,0 +1,192 @@
+{
+  "info": {
+    "name": "Arvan Cloud Agentic RAG API",
+    "_postman_id": "arvan-cloud-rag-collection-v1",
+    "description": "Comprehensive Postman collection for Arvan Cloud Agentic RAG API with Multi-format Ingestion, Hybrid Search, Document Deletion, and Server Pricing.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8000",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "System",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "health"]
+            },
+            "description": "Returns API health status, indexed document count, and active model settings."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Retrieval & QA",
+      "item": [
+        {
+          "name": "Ask Question (Agentic RAG)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"شرایط دیسک محلی (Local Disk) و تفاوت آن با بلاک استوریج چیست؟\",\n  \"alpha\": 0.8,\n  \"top_k\": 4,\n  \"use_agent\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/query",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "query"]
+            },
+            "description": "Executes grounded question answering with citations and support escalation when applicable."
+          },
+          "response": []
+        },
+        {
+          "name": "Hybrid Fusion Search",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"S3 object storage durability & 64,000 IOPS\",\n  \"alpha\": 0.8,\n  \"top_k\": 5\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/search",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "search"]
+            },
+            "description": "Performs direct hybrid search combining dense vectors and BM25Okapi lexical matching."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Document Management",
+      "item": [
+        {
+          "name": "List Indexed Documents",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/documents",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "documents"]
+            },
+            "description": "Lists all documents currently indexed in the knowledge base."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Document Table of Contents (TOC)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/documents/sample_architecture/toc",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "documents", "sample_architecture", "toc"]
+            },
+            "description": "Retrieves the hierarchical AST TOC tree for a document."
+          },
+          "response": []
+        },
+        {
+          "name": "Ingest Document (Multipart Upload)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "description": "Upload a .md, .pdf, or .txt file"
+                },
+                {
+                  "key": "doc_id",
+                  "value": "sample_upload_doc",
+                  "type": "text",
+                  "description": "Optional custom doc_id"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/documents/ingest",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "documents", "ingest"]
+            },
+            "description": "Uploads and indexes a document with incremental SHA-256 diffing."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Document (Purge from DB)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/documents/sample_architecture",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "documents", "sample_architecture"]
+            },
+            "description": "Deletes a document completely from ChromaDB, BM25, and registry to prevent outdated citations."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Pricing Calculator",
+      "item": [
+        {
+          "name": "Calculate Server Price",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cpu_cores\": 4,\n  \"ram_gb\": 8,\n  \"storage_gb\": 100,\n  \"region\": \"iran\",\n  \"tier\": \"standard\",\n  \"storage_type\": \"ssd\",\n  \"download_traffic_gb\": 500,\n  \"backup_gb\": 50\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/calculator/price",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "calculator", "price"]
+            },
+            "description": "Calculates official hourly and monthly costs for Arvan Cloud Server resources in Tomans."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
