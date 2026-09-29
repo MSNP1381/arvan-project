@@ -4,6 +4,22 @@ A production-ready **Agentic Retrieval-Augmented Generation (RAG)** application 
 
 ---
 
+## 🎬 Project Showcase & Launch Video
+
+<p align="center">
+  <video src="brag.mp4" poster="brag.jpg" width="100%" controls playsinline autoplay muted loop>
+    <a href="brag.mp4">
+      <img src="brag.jpg" alt="Arvan Cloud Agentic RAG Launch Video" width="100%" />
+    </a>
+  </video>
+</p>
+
+<p align="center">
+  <em>Click above to play the launch video (<b><a href="brag.mp4">brag.mp4</a></b> • 19s 1080p with audio) showcasing the zero-token diff engine, hybrid search retrieval, and LangGraph orchestration.</em>
+</p>
+
+---
+
 ## 🌟 Key Features
 
 1. **Hierarchical Markdown TOC Parser (`MarkdownTreeParser`)**:
